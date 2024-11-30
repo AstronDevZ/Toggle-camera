@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ToggleCall Advanced</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        }
+        video {
+            width: 100%;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        button, input, textarea {
+            margin-top: 10px;
+            padding: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background: #4facfe;
+            color: white;
+            transition: background 0.3s ease;
+        }
+        button:hover {
+            background: #00f2fe;
+        }
+        input, textarea {
+            width: calc(100% - 20px);
+            padding: 10px;
+            resize: none;
+        }
+        .qrcode {
+            margin: 15px auto;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .footer {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ToggleCall Advanced</h1>
+        <video id="localVideo" autoplay muted playsinline></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+        <textarea id="signalData" rows="5" placeholder="Share this signaling data or scan a QR code"></textarea>
+        <button id="startBtn">Start Call</button>
+        <button id="generateQRBtn">Generate QR Code</button>
+        <div id="qrcode" class="qrcode"></div>
+        <p class="footer">Powered by WebRTC</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const signalData = document.getElementById('signalData');
+        const startBtn = document.getElementById('startBtn');
+        const generateQRBtn = document.getElementById('generateQRBtn');
+        const qrcodeDiv = document.getElementById('qrcode');
+
+        let localStream;
+        let peerConnection;
+        const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        // Get user media (camera and microphone)
+        async function getMedia() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+            } catch (error) {
+                console.error('Error accessing media devices.', error);
+                alert('Could not access camera or microphone.');
+            }
+        }
+
+        // Initialize the PeerConnection
+        async function initCall() {
+            peerConnection = new RTCPeerConnection(configuration);
+
+            // Add local stream tracks to the PeerConnection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            // Handle incoming remote stream
+            peerConnection.ontrack = (event) => {
+                remoteVideo.srcObject = event.streams[0];
+            };
+
+            // Handle ICE candidate exchange
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    const signalDataOutput = JSON.stringify(peerConnection.localDescription);
+                    signalData.value = signalDataOutput;
+                }
+            };
+
+            // Create an offer and set it as the local description
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            signalData.value = JSON.stringify(offer);
+        }
+
+        // Handle signaling data from the other peer
+        async function handleSignal() {
+            const signal = JSON.parse(signalData.value);
+
+            if (signal.type === 'offer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                signalData.value = JSON.stringify(answer);
+            } else if (signal.type === 'answer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+            }
+        }
+
+        // Generate QR Code for signaling data
+        function generateQRCode() {
+            qrcodeDiv.innerHTML = '';
+            QRCode.toCanvas(qrcodeDiv, signalData.value, (error) => {
+                if (error) {
+                    console.error('Error generating QR code:', error);
+                    alert('Failed to generate QR code.');
+                }
+            });
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', async () => {
+            if (!peerConnection) {
+                await initCall();
+            } else {
+                await handleSignal();
+            }
+        });
+
+        generateQRBtn.addEventListener('click', generateQRCode);
+
+        // Start camera on load
+        getMedia();
+    </script>
+</body>
+</html>
